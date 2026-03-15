@@ -18,6 +18,7 @@ model User {
   email     String   @unique
   name      String?
   googleId  String?  @unique
+  passwordHash String?
   role      Role     @default(GUEST)
   createdAt DateTime @default(now())
 }

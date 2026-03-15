@@ -1,4 +1,8 @@
-const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
+"use client"
+
+import { FormEvent, useEffect, useState } from "react"
+
+const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 
 function GoogleIcon() {
   return (
@@ -20,99 +24,171 @@ function AppleIcon() {
 }
 
 export default function Home() {
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [showPasswordLogin, setShowPasswordLogin] = useState(false)
+  const [errorMessage, setErrorMessage] = useState("")
+  const [oauthErrorMessage, setOauthErrorMessage] = useState("")
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    let isMounted = true
+
+    async function loadAuthFlash() {
+      try {
+        const response = await fetch(`${backendUrl}/auth/flash`, {
+          credentials: "include"
+        })
+
+        if (!response.ok) {
+          return
+        }
+
+        const data = await response.json()
+
+        if (!isMounted || !data?.message) {
+          return
+        }
+
+        setOauthErrorMessage(data.message)
+
+        if (data.code === "use-email-login") {
+          setShowPasswordLogin(true)
+        }
+      } catch {
+        return
+      }
+    }
+
+    loadAuthFlash()
+
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
+  async function handleEmailLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setErrorMessage("")
+    setLoading(true)
+
+    try {
+      const response = await fetch(`${backendUrl}/auth/login`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        credentials: "include",
+        body: JSON.stringify({ email, password })
+      })
+
+      const data = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        setErrorMessage(data?.message || "Login gagal")
+        return
+      }
+
+      const redirectTo = data?.redirectTo || "/dashboard"
+      window.location.href = redirectTo
+    } catch {
+      setErrorMessage("Terjadi gangguan jaringan")
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
-    <>
-      <style>{`
-        @keyframes fadeUp {
-          from { opacity: 0; transform: translateY(12px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        .login-card { animation: fadeUp .4s ease both; }
-        .login-btn:hover {
-          border-color: #B8BFCF !important;
-          background: #FAFBFD !important;
-          box-shadow: 0 2px 8px rgba(0,0,0,.06);
-        }
-      `}</style>
+    <main className="login-page">
+      <div className="login-card">
 
-      <main style={{
-        fontFamily: 'var(--font-plus-jakarta-sans, "Plus Jakarta Sans", sans-serif)',
-        background: '#F5F6FA',
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        color: '#1A1F2E',
-      }}>
-        <div className="login-card" style={{
-          background: '#fff',
-          borderRadius: '20px',
-          width: '400px',
-          padding: '40px',
-          boxShadow: '0 2px 4px rgba(0,0,0,.04), 0 12px 40px rgba(0,0,0,.08)',
-        }}>
-
-          {/* Logo */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '32px' }}>
-            <div style={{
-              width: '38px', height: '38px', background: '#1B3A8C', borderRadius: '10px',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: '17px', flexShrink: 0,
-            }}>🏢</div>
-            <div>
-              <div style={{ fontSize: '15px', fontWeight: 700, color: '#1A1F2E' }}>VMS KTI</div>
-              <div style={{ fontSize: '11px', color: '#9AA1B4', marginTop: '1px' }}>Visitor Management System</div>
-            </div>
+        {/* Logo */}
+        <div className="login-logo">
+          <div className="login-logo-icon">🏢</div>
+          <div>
+            <div className="login-logo-name">VMS KTI</div>
+            <div className="login-logo-tagline">Visitor Management System</div>
           </div>
-
-          {/* Heading */}
-          <div style={{ marginBottom: '28px' }}>
-            <h1 style={{ fontSize: '22px', fontWeight: 700, color: '#1A1F2E', margin: '0 0 6px', letterSpacing: '-.01em' }}>
-              Masuk ke akun Anda
-            </h1>
-            <p style={{ fontSize: '13.5px', color: '#6B7385', lineHeight: 1.6, margin: 0 }}>
-              Silakan masuk ke akun Anda agar dapat mengajukan reservasi kunjungan.
-            </p>
-          </div>
-
-          {/* OAuth Buttons */}
-          <a
-            href={`${backendUrl}/auth/google`}
-            className="login-btn"
-            style={{
-              width: '100%', display: 'flex', alignItems: 'center', gap: '12px',
-              padding: '13px 16px', background: '#fff', border: '1.5px solid #E4E7EF',
-              borderRadius: '12px', fontSize: '14px', fontWeight: 500, color: '#1A1F2E',
-              cursor: 'pointer', fontFamily: 'inherit', marginBottom: '10px',
-              transition: 'border-color .15s, box-shadow .15s, background .15s',
-              textDecoration: 'none',
-            }}
-          >
-            <span style={{ width: '22px', height: '22px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <GoogleIcon />
-            </span>
-            Lanjutkan dengan Google
-          </a>
-
-          <button
-            type="button"
-            className="login-btn"
-            style={{
-              width: '100%', display: 'flex', alignItems: 'center', gap: '12px',
-              padding: '13px 16px', background: '#fff', border: '1.5px solid #E4E7EF',
-              borderRadius: '12px', fontSize: '14px', fontWeight: 500, color: '#1A1F2E',
-              cursor: 'pointer', fontFamily: 'inherit',
-              transition: 'border-color .15s, box-shadow .15s, background .15s',
-            }}
-          >
-            <span style={{ width: '22px', height: '22px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <AppleIcon />
-            </span>
-            Lanjutkan dengan Apple
-          </button>
-
         </div>
-      </main>
-    </>
+
+        {/* Heading */}
+        <div className="login-heading">
+          <h1 className="login-heading-title">
+            Masuk ke akun Anda
+          </h1>
+          <p className="login-heading-text">
+            Silakan masuk untuk melanjutkan ke halaman sesuai akses Anda.
+          </p>
+        </div>
+
+        {(oauthErrorMessage || errorMessage) && (
+          <div className="login-alert">
+            {errorMessage || oauthErrorMessage}
+          </div>
+        )}
+
+        {/* OAuth Buttons */}
+        <a
+          href={`${backendUrl}/auth/google/guest`}
+          className="login-btn"
+        >
+          <span className="login-btn-icon">
+            <GoogleIcon />
+          </span>
+          Lanjutkan dengan Google
+        </a>
+
+        <button
+          type="button"
+          className="login-btn"
+        >
+          <span className="login-btn-icon">
+            <AppleIcon />
+          </span>
+          Lanjutkan dengan Apple
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setShowPasswordLogin((previous) => !previous)}
+          className="login-btn"
+        >
+          <span className="login-toggle-icon">{showPasswordLogin ? '▲' : '▼'}</span>
+          Masuk dengan Email
+        </button>
+
+        {showPasswordLogin && (
+          <form onSubmit={handleEmailLogin} className="login-form">
+            <input
+              className="login-input"
+              type="email"
+              placeholder="Email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              autoComplete="email"
+              required
+            />
+            <input
+              className="login-input"
+              type="password"
+              placeholder="Password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              autoComplete="current-password"
+              required
+            />
+            <button
+              type="submit"
+              className="login-btn login-submit-btn"
+              disabled={loading}
+            >
+              {loading ? 'Memproses...' : 'Masuk'}
+            </button>
+          </form>
+        )}
+
+        
+      </div>
+    </main>
   )
 }
