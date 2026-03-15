@@ -5,6 +5,8 @@ import prisma from "../lib/prisma.js"
 
 const router = express.Router()
 const STAFF_ROLES = new Set(["ADMIN", "HOST", "SECURITY"])
+const MAX_FAILED_LOGINS = 5
+const LOCK_WINDOW_MINUTES = 15
 
 function getFrontendUrl() {
   return process.env.FRONTEND_URL || "http://localhost:3000"
@@ -44,12 +46,13 @@ router.post("/login", async (req, res) => {
   try {
     const email = req.body?.email?.trim()?.toLowerCase()
     const password = req.body?.password
+    const now = new Date()
 
     if (!email || !password) {
       return res.status(400).json({ message: "Email dan password wajib diisi" })
     }
 
-    const user = await prisma.user.findUnique({
+    const user = await prisma.internalUser.findUnique({
       where: { email }
     })
 
@@ -57,9 +60,29 @@ router.post("/login", async (req, res) => {
       return res.status(401).json({ message: "Email atau password salah" })
     }
 
+    if (!user.isActive) {
+      return res.status(403).json({ message: "Akun tidak aktif" })
+    }
+
+    if (user.lockedUntil && user.lockedUntil > now) {
+      return res.status(423).json({ message: "Akun dikunci sementara. Coba lagi nanti" })
+    }
+
     const isValidPassword = await bcrypt.compare(password, user.passwordHash)
 
     if (!isValidPassword) {
+      const nextFailedCount = user.failedLoginCount + 1
+      await prisma.internalUser.update({
+        where: { id: user.id },
+        data: {
+          failedLoginCount: nextFailedCount >= MAX_FAILED_LOGINS ? 0 : nextFailedCount,
+          lockedUntil:
+            nextFailedCount >= MAX_FAILED_LOGINS
+              ? new Date(now.getTime() + LOCK_WINDOW_MINUTES * 60 * 1000)
+              : null
+        }
+      })
+
       return res.status(401).json({ message: "Email atau password salah" })
     }
 
@@ -67,7 +90,24 @@ router.post("/login", async (req, res) => {
       return res.status(403).json({ message: "Akun ini tidak bisa login dengan metode ini" })
     }
 
-    req.login(user, (error) => {
+    await prisma.internalUser.update({
+      where: { id: user.id },
+      data: {
+        failedLoginCount: 0,
+        lockedUntil: null,
+        lastLoginAt: now
+      }
+    })
+
+    req.login(
+      {
+        id: user.id,
+        email: user.email,
+        fullName: user.fullName,
+        role: user.role,
+        accountType: "internal"
+      },
+      (error) => {
       if (error) {
         return res.status(500).json({ message: "Gagal membuat sesi login" })
       }
@@ -76,7 +116,8 @@ router.post("/login", async (req, res) => {
         message: "Login berhasil",
         redirectTo: getRoleHome(user.role)
       })
-    })
+      }
+    )
   } catch {
     return res.status(500).json({ message: "Terjadi kesalahan di server" })
   }

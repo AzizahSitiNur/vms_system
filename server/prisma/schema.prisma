@@ -1,31 +1,261 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
-generator client {
-  provider = "prisma-client-js"
-}
-
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-model User {
-  id        String   @id @default(uuid())
-  email     String   @unique
-  name      String?
-  googleId  String?  @unique
-  passwordHash String?
-  role      Role     @default(GUEST)
-  createdAt DateTime @default(now())
+generator client {
+  provider = "prisma-client-js"
 }
 
-enum Role {
+enum AuthProvider {
+  GOOGLE
+  ICLOUD
+}
+
+enum InternalRole {
   ADMIN
-  SECURITY
   HOST
-  GUEST
+  SECURITY
+}
+
+enum ReservationStatus {
+  PENDING
+  SCHEDULED
+  ACTIVE
+  COMPLETED
+  REJECTED
+  CANCELLED
+  EXTENDED
+}
+
+enum QRStatus {
+  PENDING
+  ACTIVE
+  USED
+  EXPIRED
+}
+
+enum AccessType {
+  INITIAL
+  ADDITIONAL
+}
+
+enum AccessSource {
+  SECURITY
+  KIOSK
+  WEB
+}
+
+enum LogAction {
+  ENTRY
+  EXIT
+}
+
+model User {
+  id           String                 @id @default(uuid())
+  fullName     String                 @map("full_name")
+  email        String                 @unique
+  phone        String?
+  company      String?
+  authProvider AuthProvider           @map("auth_provider")
+  googleId     String?                @unique @map("google_id")
+  icloudId     String?                @unique @map("icloud_id")
+  createdAt    DateTime               @default(now()) @map("created_at")
+  updatedAt    DateTime               @updatedAt @map("updated_at")
+  reservations Reservation[]          @relation("CreatedBy")
+  visitorInfo  ReservationVisitor[]
+
+  @@map("users")
+}
+
+model InternalUser {
+  id                    String          @id @default(uuid())
+  fullName              String          @map("full_name")
+  email                 String          @unique
+  passwordHash          String?         @map("password_hash")
+  role                  InternalRole
+  isActive              Boolean         @default(true) @map("is_active")
+  failedLoginCount      Int             @default(0) @map("failed_login_count")
+  lockedUntil           DateTime?       @map("locked_until")
+  lastLoginAt           DateTime?       @map("last_login_at")
+  createdAt             DateTime        @default(now()) @map("created_at")
+  updatedAt             DateTime        @updatedAt @map("updated_at")
+  hostProfile           HostEmployee?
+  securityProfile       SecurityUser?
+  approvedReservations  Reservation[]   @relation("ApprovedByInternal")
+  checkIns              CheckIn[]       @relation("CheckedByInternal")
+
+  @@map("internal_users")
+}
+
+model HostEmployee {
+  id             String         @id @default(uuid())
+  internalUserId String         @unique @map("internal_user_id")
+  department     String
+  buildingId     String         @map("building_id")
+  internalUser   InternalUser   @relation(fields: [internalUserId], references: [id])
+  building       Building       @relation(fields: [buildingId], references: [id])
+  reservations   Reservation[]  @relation("TargetHost")
+  additionalAccess BuildingAccess[]
+
+  @@map("host_employees")
+}
+
+model Building {
+  id               String           @id @default(uuid())
+  name             String
+  location         String
+  operatingStart   String           @map("operating_start")
+  operatingEnd     String           @map("operating_end")
+  hosts            HostEmployee[]
+  reservations     Reservation[]
+  buildingAccess   BuildingAccess[]
+  visitorLogs      VisitorLog[]
+  targetQrCodes    QRCode[]         @relation("QRCodeTargetBuilding")
+
+  @@map("buildings")
+}
+
+model SecurityPost {
+  id         String         @id @default(uuid())
+  name       String
+  coordinate String
+  qrs        QRCode[]
+  checkIns   CheckIn[]
+  users      SecurityUser[]
+
+  @@map("security_posts")
+}
+
+model Reservation {
+  id                       String             @id @default(uuid())
+  createdByUserId          String             @map("created_by")
+  hostId                   String             @map("host_id")
+  buildingId               String             @map("building_id")
+  purpose                  String             @db.Text
+  visitDate                DateTime           @map("visit_date")
+  visitTime                String             @map("visit_time")
+  visitEndTime             String             @map("visit_end_time")
+  status                   ReservationStatus  @default(PENDING)
+  isGroup                  Boolean            @default(false) @map("is_group")
+  approvalNote             String?            @map("approval_note") @db.Text
+  approvedAt               DateTime?          @map("approved_at")
+  approvedByInternalUserId String?            @map("approved_by")
+  reservationCode          String             @unique @map("reservation_code")
+  parentReservationId      String?            @map("parent_reservation_id")
+  isExtension              Boolean            @default(false) @map("is_extension")
+  createdAt                DateTime           @default(now()) @map("created_at")
+  updatedAt                DateTime           @updatedAt @map("updated_at")
+  creator                  User               @relation("CreatedBy", fields: [createdByUserId], references: [id])
+  host                     HostEmployee       @relation("TargetHost", fields: [hostId], references: [id])
+  building                 Building           @relation(fields: [buildingId], references: [id])
+  approvedBy               InternalUser?      @relation("ApprovedByInternal", fields: [approvedByInternalUserId], references: [id])
+  parentReservation        Reservation?       @relation("ExtensionHistory", fields: [parentReservationId], references: [id])
+  extensions               Reservation[]      @relation("ExtensionHistory")
+  visitors                 ReservationVisitor[]
+  qrCodes                  QRCode[]
+  checkIn                  CheckIn?
+
+  @@map("reservations")
+}
+
+model ReservationVisitor {
+  id               String        @id @default(uuid())
+  reservationId    String        @map("reservation_id")
+  userId           String?       @map("user_id")
+  fullName         String        @map("full_name")
+  isRepresentative Boolean       @default(false) @map("is_representative")
+  reservation      Reservation   @relation(fields: [reservationId], references: [id])
+  user             User?         @relation(fields: [userId], references: [id])
+  qrCodes          QRCode[]
+  // ==========================================
+  // OPSI 1: TANPA KTP
+  // ==========================================
+  identityNumber   String?     @map("identity_number") // Bisa diisi manual (NIK/SIM) tanpa upload file
+  
+  // ==========================================
+  // OPSI 2: DENGAN KTP
+  // ==========================================
+  // ktpImageURL      String?     @map("ktp_image_url")
+
+  @@map("reservation_visitors")
+}
+
+model QRCode {
+  id               String               @id @default(uuid())
+  reservationId    String               @map("reservation_id")
+  visitorId        String               @map("visitor_id")
+  qrToken          String               @unique @map("qr_token")
+  securityPostId   String               @map("security_post_id")
+  targetBuildingId String               @map("target_building_id")
+  status           QRStatus             @default(PENDING)
+  generatedAt      DateTime             @default(now()) @map("generated_at")
+  expiresAt        DateTime             @map("expires_at")
+  emailSent        Boolean              @default(false) @map("email_sent")
+  emailSentAt      DateTime?            @map("email_sent_at")
+  reservation      Reservation          @relation(fields: [reservationId], references: [id])
+  visitor          ReservationVisitor   @relation(fields: [visitorId], references: [id])
+  securityPost     SecurityPost         @relation(fields: [securityPostId], references: [id])
+  targetBuilding   Building             @relation("QRCodeTargetBuilding", fields: [targetBuildingId], references: [id])
+  buildingAccess   BuildingAccess[]
+  visitorLogs      VisitorLog[]
+
+  @@map("qr_codes")
+}
+
+model BuildingAccess {
+  id         String        @id @default(uuid())
+  qrCodeId   String        @map("qr_code_id")
+  buildingId String        @map("building_id")
+  hostId     String?       @map("host_id")
+  purpose    String
+  accessType AccessType    @map("access_type")
+  source     AccessSource
+  visitStart DateTime      @map("visit_start")
+  expiresAt  DateTime      @map("expires_at")
+  grantedAt  DateTime      @default(now()) @map("granted_at")
+  qrCode     QRCode        @relation(fields: [qrCodeId], references: [id])
+  building   Building      @relation(fields: [buildingId], references: [id])
+  host       HostEmployee? @relation(fields: [hostId], references: [id])
+
+  @@map("qr_building_access")
+}
+
+model CheckIn {
+  id                      String         @id @default(uuid())
+  reservationId           String         @unique @map("reservation_id")
+  securityPostId          String         @map("security_post_id")
+  checkedByInternalUserId String         @map("checked_by")
+  hostNameInput           String         @map("host_name_input")
+  buildingInputId         String         @map("building_input")
+  checkedAt               DateTime       @default(now()) @map("checked_at")
+  reservation             Reservation    @relation(fields: [reservationId], references: [id])
+  securityPost            SecurityPost   @relation(fields: [securityPostId], references: [id])
+  checkedBy               InternalUser   @relation("CheckedByInternal", fields: [checkedByInternalUserId], references: [id])
+
+  @@map("check_ins")
+}
+
+model VisitorLog {
+  id         String      @id @default(uuid())
+  qrCodeId   String      @map("qr_code_id")
+  buildingId String      @map("building_id")
+  doorId     String      @map("door_id")
+  scannedAt  DateTime    @default(now()) @map("scanned_at")
+  action     LogAction
+  qrCode     QRCode      @relation(fields: [qrCodeId], references: [id])
+  building   Building    @relation(fields: [buildingId], references: [id])
+
+  @@map("visitor_logs")
+}
+
+model SecurityUser {
+  id             String         @id @default(uuid())
+  internalUserId String         @unique @map("internal_user_id")
+  postId         String         @map("post_id")
+  isActive       Boolean        @default(true) @map("is_active")
+  internalUser   InternalUser   @relation(fields: [internalUserId], references: [id])
+  post           SecurityPost   @relation(fields: [postId], references: [id])
+
+  @@map("security_users")
 }

@@ -1,5 +1,4 @@
 import express from "express"
-import prisma from "../lib/prisma.js"
 
 const router = express.Router()
 
@@ -8,11 +7,7 @@ router.get("/me", async (req, res) => {
     return res.status(401).json({ message: "Unauthorized" })
   }
 
-  const user = await prisma.user.findUnique({
-    where: { id: req.user.id }
-  })
-
-  return res.json(user)
+  return res.json(req.user)
 })
 
 export default router

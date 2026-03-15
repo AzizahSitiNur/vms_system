@@ -13,7 +13,7 @@ if (!email || !password) {
 const allowedRoles = new Set(["ADMIN", "HOST", "SECURITY"])
 
 try {
-  const user = await prisma.user.findUnique({ where: { email } })
+  const user = await prisma.internalUser.findUnique({ where: { email } })
 
   if (!user) {
     console.error(`User not found: ${email}`)
@@ -27,7 +27,7 @@ try {
 
   const passwordHash = await bcrypt.hash(password, 12)
 
-  await prisma.user.update({
+  await prisma.internalUser.update({
     where: { email },
     data: { passwordHash }
   })

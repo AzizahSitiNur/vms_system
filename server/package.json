@@ -7,6 +7,7 @@
     "dev": "nodemon index.js",
     "start": "node index.js",
     "set:internal-password": "node scripts/set-internal-password.mjs",
+    "upsert:internal-user": "node scripts/upsert-internal-user.mjs",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
